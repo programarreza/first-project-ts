@@ -1,105 +1,166 @@
+import bcrypt from 'bcrypt';
 import { Schema, model } from 'mongoose';
+import config from '../../config';
 import {
-  Guardian,
-  LocalGuardian,
-  Student,
-  UserName,
+  StudentModel,
+  TGuardian,
+  TLocalGuardian,
+  TStudent,
+  TUserName,
 } from './student.interface';
 
-const userNameSchema = new Schema<UserName>({
+const userNameSchema = new Schema<TUserName>({
   firstName: {
     type: String,
-    required: true,
   },
   middleName: {
     type: String,
   },
   lastName: {
     type: String,
-    required: true,
   },
 });
 
-const guardianSchema = new Schema<Guardian>({
+const guardianSchema = new Schema<TGuardian>({
   fatherName: {
     type: String,
-    required: true,
   },
   fatherOccupation: {
     type: String,
-    required: true,
   },
   fatherContactNo: {
     type: String,
-    required: true,
   },
   motherName: {
     type: String,
-    required: true,
   },
   motherOccupation: {
     type: String,
-    required: true,
   },
   motherContactNo: {
     type: String,
-    required: true,
   },
 });
 
-const localGuardianSchema = new Schema<LocalGuardian>({
+const localGuardianSchema = new Schema<TLocalGuardian>({
   name: {
     type: String,
-    required: true,
   },
   occupation: {
     type: String,
-    required: true,
   },
 
   contactNo: {
     type: String,
-    required: true,
   },
   address: {
     type: String,
-    required: true,
   },
 });
 
-const studentSchema = new Schema<Student>(
+const studentSchema = new Schema<TStudent, StudentModel>(
   {
-    id: { type: String },
-    name: userNameSchema,
-    gender: ['male', 'female'],
+    id: {
+      type: String,
+    },
+    password: {
+      type: String,
+    },
+    name: {
+      type: userNameSchema,
+    },
+    gender: {
+      type: String,
+    },
     dateOfBirth: { type: String },
     email: {
       type: String,
-      required: true,
     },
     contactNo: {
       type: String,
-      required: true,
     },
     emergencyContactNo: {
       type: String,
-      required: true,
     },
-    bloodGroup: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
+    bloodGroup: {
+      type: String,
+    },
     presentAddress: {
       type: String,
-      required: true,
     },
     permanentAddress: {
       type: String,
-      required: true,
     },
-    guardian: guardianSchema,
-    localGuardian: localGuardianSchema,
+    guardian: {
+      type: guardianSchema,
+    },
+    localGuardian: {
+      type: localGuardianSchema,
+    },
     profileImg: { type: String },
-    isActive: ['active', 'blocked'],
+    isActive: {
+      type: String,
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
   },
-  { timestamps: true },
+  // { timestamps: true },
+  { toJSON: { virtuals: true } },
 );
 
-export const StudentModel = model<Student>('Student', studentSchema);
+// virtual
+studentSchema.virtual('fullName').get(function () {
+  return `${this.name.firstName}  ${this.name.middleName}  ${this.name.lastName}`;
+});
+
+// pre save middleware / hook : will work on create() save()
+studentSchema.pre('save', async function (next) {
+  // eslint-disable-next-line @typescript-eslint/no-this-alias
+  const user = this;
+  user.password = await bcrypt.hash(
+    user.password,
+    Number(config.bcrypt_salt_rounds),
+  );
+  next();
+  console.log(this, 'pre hook : we will save | data ');
+});
+
+// post save middleware / hook
+studentSchema.post('save', function (updatedDoc, next) {
+  // console.log(this, 'pre hook : we saved our data ');
+  updatedDoc.password = '';
+  next();
+});
+
+// Query middleware
+studentSchema.pre('find', function (next) {
+  this.find({ isDeleted: { $ne: true } });
+  next();
+});
+
+studentSchema.pre('findOne', function (next) {
+  this.find({ isDeleted: { $ne: true } });
+  next();
+});
+
+// example:  [{$match: {isDeleted: {$ne: true}}}, {"$match": {id: "123465"}}]
+studentSchema.pre('aggregate', function (next) {
+  this.pipeline().unshift({ $match: { isDeleted: { $ne: true } } });
+  next();
+});
+
+// creating a custom static method
+studentSchema.statics.isUserExists = async function (id: string) {
+  const existingUser = await Student.findOne({ id });
+  return existingUser;
+};
+
+// creating a custom instance method
+// studentSchema.methods.isUserExists = async function (id: string) {
+//   const existingUser = await Student.findOne({ id });
+//   return existingUser;
+// };
+
+export const Student = model<TStudent, StudentModel>('Student', studentSchema);
